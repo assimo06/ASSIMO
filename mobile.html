@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASSIMO — Terminal Mobile PIN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between p-6">
+    <div class="max-w-md mx-auto w-full my-auto glass-panel rounded-3xl p-8 text-center shadow-2xl">
+        <div class="h-16 w-16 mx-auto mb-6 rounded-2xl bg-gradient-to-tr from-brand-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-brand-500/30">
+            <i data-lucide="lock-keyhole" class="h-8 w-8 text-white"></i>
+        </div>
+        
+        <h1 class="text-2xl font-extrabold text-white mb-2">Terminal Mobile</h1>
+        <p class="text-slate-400 text-sm mb-6">Entrez le code à 4 chiffres affiché sur votre PC.</p>
+        
+        <!-- Formulaire de saisie du PIN -->
+        <div id="pin-form-container" class="space-y-4 mb-6">
+            <input type="text" id="user-pin-input" maxlength="4" placeholder="----" class="w-full text-center text-3xl font-mono tracking-widest py-3 rounded-xl bg-slate-900 border border-slate-700 text-brand-400 focus:outline-none focus:border-brand-500">
+            <button onclick="verifyPinCode()" class="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-lg shadow-brand-600/20 text-sm">
+                Valider et Connecter
+            </button>
+            <p id="pin-error" class="text-rose-400 text-xs hidden">Code incorrect. Vérifiez les chiffres sur votre PC.</p>
+        </div>
+
+        <!-- Vue après connexion réussie -->
+        <div id="connected-view" class="hidden space-y-4">
+            <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                ✓ Liaison établie avec succès ! Le PC contrôle les entrées clavier.
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-left">
+                <span class="text-xs uppercase tracking-wider text-slate-500 font-bold block mb-1">Touche reçue du PC :</span>
+                <div id="remote-input-display" class="text-xl font-mono text-brand-400 font-bold">En attente de frappe...</div>
+            </div>
+        </div>
+
+        <button onclick="window.close()" class="w-full mt-4 py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold border border-slate-800 transition text-sm">
+            Fermer
+        </button>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session');
+        const expectedPin = urlParams.get('pin'); // Récupère automatiquement le PIN généré par le PC
+
+        // Pré-remplit ou aide à la saisie si besoin
+        window.addEventListener('DOMContentLoaded', () => {
+            if (expectedPin) {
+                // Optionnel : on peut pré-remplir pour que ce soit instantané, ou laisser l'utilisateur le taper
+                document.getElementById('user-pin-input').value = expectedPin;
+            }
+        });
+
+        function verifyPinCode() {
+            const enteredPin = document.getElementById('user-pin-input').value.trim();
+            
+            if (enteredPin === expectedPin) {
+                // Valide la session auprès du PC via le stockage local
+                localStorage.setItem(`assimo_pin_valid_${sessionId}`, 'true');
+
+                // Bascule l'affichage du téléphone
+                document.getElementById('pin-form-container').classList.add('hidden');
+                document.getElementById('connected-view').classList.remove('hidden');
+
+                // Écoute les touches du clavier envoyées en direct par le PC
+                setInterval(() => {
+                    const rawKey = localStorage.getItem(`assimo_key_${sessionId}`);
+                    if (rawKey) {
+                        try {
+                            const data = JSON.parse(rawKey);
+                            document.getElementById('remote-input-display').textContent = `Touche : ${data.key}`;
+                        } catch(e) {}
+                    }
+                }, 100);
+            } else {
+                const err = document.getElementById('pin-error');
+                err.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
