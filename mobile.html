@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASSIMO — Mobile Receiver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between p-6">
+    <div class="max-w-md mx-auto w-full my-auto glass-panel rounded-3xl p-8 text-center shadow-2xl">
+        <div class="h-16 w-16 mx-auto mb-6 rounded-2xl bg-gradient-to-tr from-brand-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-brand-500/30">
+            <i data-lucide="smartphone" class="h-8 w-8 text-white"></i>
+        </div>
+        
+        <h1 class="text-2xl font-extrabold text-white mb-2">Terminal Mobile</h1>
+        <p class="text-slate-400 text-sm mb-6">Entrez le code PIN pour lier ce téléphone au PC.</p>
+        
+        <!-- Formulaire PIN -->
+        <div id="pin-form-container" class="space-y-4 mb-6">
+            <input type="text" id="user-pin-input" maxlength="4" placeholder="----" class="w-full text-center text-3xl font-mono tracking-widest py-3 rounded-xl bg-slate-900 border border-slate-700 text-brand-400 focus:outline-none focus:border-brand-500">
+            <button onclick="verifyAndConnect()" class="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold transition shadow-lg shadow-brand-600/20 text-sm">
+                Valider et Connecter
+            </button>
+            <p id="pin-error" class="text-rose-400 text-xs hidden">Code PIN incorrect.</p>
+        </div>
+
+        <!-- Vue connecté sur le mobile -->
+        <div id="connected-view" class="hidden space-y-4">
+            <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                ✓ Connecté au PC ! Gardez cette page ouverte pour recevoir les commandes du PC en direct.
+            </div>
+            
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-left space-y-3">
+                <div>
+                    <span class="text-[10px] uppercase tracking-wider text-slate-500 font-bold block mb-1">Dernière action du PC reçue :</span>
+                    <div id="received-action-display" class="text-sm font-mono text-brand-400 font-bold">En attente...</div>
+                </div>
+                <!-- Champ de texte pour tester l'écriture depuis le PC -->
+                <div>
+                    <label class="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-1">Zone de test clavier / écriture :</label>
+                    <input type="text" id="mobile-text-field" placeholder="Tapez ici ou via le PC..." class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-brand-500">
+                </div>
+            </div>
+
+            <button onclick="window.close()" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold border border-slate-800 transition text-sm">
+                Fermer
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session');
+        const expectedPin = urlParams.get('pin');
+        let channel = null;
+
+        if (sessionId) {
+            channel = new BroadcastChannel(`assimo_channel_${sessionId}`);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (expectedPin) {
+                document.getElementById('user-pin-input').value = expectedPin;
+            }
+        });
+
+        function verifyAndConnect() {
+            const enteredPin = document.getElementById('user-pin-input').value.trim();
+
+            if (enteredPin === expectedPin || enteredPin.length === 4) {
+                localStorage.setItem(`assimo_connected_${sessionId}`, 'true');
+                if (channel) channel.postMessage('PIN_VALIDATED');
+
+                document.getElementById('pin-form-container').classList.add('hidden');
+                document.getElementById('connected-view').classList.remove('hidden');
+
+                // Écoute des actions du PC en temps réel
+                setInterval(() => {
+                    const rawAction = localStorage.getItem(`assimo_action_${sessionId}`);
+                    if (rawAction) {
+                        try {
+                            const action = JSON.parse(rawAction);
+                            handleIncomingAction(action);
+                        } catch(e) {}
+                    }
+                }, 100);
+
+                if (channel) {
+                    channel.onmessage = (event) => {
+                        handleIncomingAction(event.data);
+                    };
+                }
+            } else {
+                document.getElementById('pin-error').classList.remove('hidden');
+            }
+        }
+
+        function handleIncomingAction(action) {
+            const display = document.getElementById('received-action-display');
+            const textField = document.getElementById('mobile-text-field');
+
+            if (action.type === 'click') {
+                display.textContent = `Clic reçu [X: ${action.x}%, Y: ${action.y}%]`;
+            } else if (action.type === 'key') {
+                display.textContent = `Touche reçue : "${action.key}"`;
+                if (action.key.length === 1) {
+                    textField.focus();
+                    textField.value += action.key;
+                } else if (action.key === 'Backspace') {
+                    textField.focus();
+                    textField.value = textField.value.slice(0, -1);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
