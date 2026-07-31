@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASSIMO v10.0</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #fff; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+        .card { background: #1e293b; border-radius: 12px; padding: 20px; text-align: center; width: 90%; max-width: 500px; margin-bottom: 10px; }
+        .status { font-weight: bold; padding: 6px 12px; border-radius: 20px; display: inline-block; margin-bottom: 10px; background: #334155; }
+        .status.connected { background: #15803d; color: #dcfce7; }
+        .video-wrapper { position: relative; width: 100%; max-height: 75vh; display: flex; justify-content: center; align-items: center; background: #000; border-radius: 8px; overflow: hidden; }
+        video { max-width: 100%; max-height: 75vh; object-fit: contain; cursor: crosshair; }
+        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>ASSIMO Remote Control</h2>
+    <div id="status" class="status">Initialisation...</div>
+    <div>ID Appareil : <strong id="my-id">...</strong></div>
+    <button id="btn-share">Partager l'écran</button>
+</div>
+
+<div class="video-wrapper">
+    <video id="remoteVideo" autoplay playsinline></video>
+</div>
+
+<script>
+    let peer = new Peer();
+    let dataConn = null;
+    const statusEl = document.getElementById('status');
+    const myIdEl = document.getElementById('my-id');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    peer.on('open', (id) => {
+        myIdEl.innerText = id;
+        statusEl.innerText = "Prêt à se connecter";
+    });
+
+    peer.on('call', (call) => {
+        call.answer();
+        call.on('stream', (stream) => {
+            remoteVideo.srcObject = stream;
+            statusEl.innerText = "Flux actif";
+            statusEl.className = "status connected";
+        });
+    });
+
+    peer.on('connection', (conn) => {
+        dataConn = conn;
+        dataConn.on('data', (data) => {
+            if (typeof AndroidBridge !== 'undefined') {
+                const screenW = window.screen.width * window.devicePixelRatio;
+                const screenH = window.screen.height * window.devicePixelRatio;
+
+                if (data.action === 'TAP') {
+                    AndroidBridge.simulateTap(data.xRatio * screenW, data.yRatio * screenH);
+                } else if (data.action === 'LONG_PRESS') {
+                    AndroidBridge.simulateLongPress(data.xRatio * screenW, data.yRatio * screenH, data.duration);
+                } else if (data.action === 'SWIPE') {
+                    AndroidBridge.simulateSwipe(
+                        data.startXRatio * screenW, data.startYRatio * screenH,
+                        data.endXRatio * screenW, data.endYRatio * screenH,
+                        data.duration
+                    );
+                }
+            }
+        });
+    });
+
+    document.getElementById('btn-share').addEventListener('click', async () => {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            remoteVideo.srcObject = stream;
+            
+            const targetPeerId = prompt("Entrez l'ID du PC distant :");
+            if (targetPeerId) {
+                peer.call(targetPeerId, stream);
+                dataConn = peer.connect(targetPeerId);
+                statusEl.innerText = "Connecté au PC";
+                statusEl.className = "status connected";
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    });
+
+    // Capture des clics/glissements de la souris sur la vidéo côté PC
+    let startX = 0, startY = 0, startTime = 0;
+
+    function getCoords(e) {
+        const rect = remoteVideo.getBoundingClientRect();
+        return {
+            xRatio: (e.clientX - rect.left) / rect.width,
+            yRatio: (e.clientY - rect.top) / rect.height
+        };
+    }
+
+    remoteVideo.addEventListener('mousedown', (e) => {
+        const c = getCoords(e);
+        startX = c.xRatio;
+        startY = c.yRatio;
+        startTime = Date.now();
+    });
+
+    remoteVideo.addEventListener('mouseup', (e) => {
+        if (!dataConn) return;
+        const c = getCoords(e);
+        const duration = Date.now() - startTime;
+        const deltaX = Math.abs(c.xRatio - startX);
+        const deltaY = Math.abs(c.yRatio - startY);
+
+        if (deltaX > 0.03 || deltaY > 0.03) {
+            dataConn.send({
+                action: 'SWIPE',
+                startXRatio: startX, startYRatio: startY,
+                endXRatio: c.xRatio, endYRatio: c.yRatio,
+                duration: Math.max(duration, 200)
+            });
+        } else if (duration > 500) {
+            dataConn.send({ action: 'LONG_PRESS', xRatio: c.xRatio, yRatio: c.yRatio, duration: duration });
+        } else {
+            dataConn.send({ action: 'TAP', xRatio: c.xRatio, yRatio: c.yRatio });
+        }
+    });
+</script>
+
+</body>
+</html>
